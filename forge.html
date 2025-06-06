@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(to bottom, #0a0a23, #1c2526);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Arial', sans-serif;
+        }
+        canvas {
+            border: 2px solid #ffffff20;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        }
+        #gameOverScreen, #startScreen {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        #statsDisplay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 20px;
+            text-shadow: 0 0 5px #00ffcc;
+        }
+        #waveDisplay {
+            position: absolute;
+            top: 20px;
+            left: 400px;
+            color: white;
+            font-size: 20px;
+            text-shadow: 0 0 5px #00ffcc;
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ffcc;
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+        }
+        #buildingDisplay {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #00ffcc;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            width: 260px;
+        }
+        #buildingDisplay h3 {
+            color: #ff00ff;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        #buildingDisplay p {
+            margin: 12px 0;
+            display: flex;
+            align-items: flex-start;
+        }
+        .building-icon {
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        .building-text {
+            padding-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="statsDisplay"></div>
+    <div id="waveDisplay"></div>
+    <div id="tooltip"></div>
+    <div id="buildingDisplay">
+        <h3>Buildings</h3>
+        <p>
+            <svg class="building-icon" width="16" height="16"><circle cx="8" cy="8" r="8" fill="#ff00ff" stroke="#ffffff" stroke-width="1"/></svg>
+            <span class="building-text"><strong>1. Standard Turret</strong> (50 Energy): Fires fast bullets (20 damage).</span>
+        </p>
+        <p>
+            <svg class="building-icon" width="16" height="16"><rect x="2" y="2" width="12" height="12" fill="#33cc33" stroke="#ffffff" stroke-width="1"/></svg>
+            <span class="building-text"><strong>2. Generator</strong> (100 Energy): +2 Energy/sec.</span>
+        </p>
+        <p>
+            <svg class="building-icon" width="16" height="16"><circle cx="8" cy="8" r="10" fill="#00ccff" stroke="#ffffff" stroke-width="1"/></svg>
+            <span class="building-text"><strong>3. Sniper Turret</strong> (500 Energy): Strong (100 damage), never misses.</span>
+        </p>
+        <p>
+            <svg class="building-icon" width="16" height="16"><rect x="4" y="4" width="8" height="8" fill="#cc33cc" stroke="#ffffff" stroke-width="1"/></svg>
+            <span class="building-text"><strong>4. Amplifier</strong> (1000 Energy): Boosts others +5%, +25% Standard bullet speed (1 max).</span>
+        </p>
+        <p>
+            <svg class="building-icon" width="16" height="16"><circle cx="8" cy="8" r="9" fill="#ffcc00" stroke="#ffffff" stroke-width="1"/></svg>
+            <span class="building-text"><strong>5. Machine Gun</strong> (2000 Energy): Rapid burst, fast bullets, long cooldown.</span>
+        </p>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="startScreen">
+        <h1 class="text-4xl font-bold mb-4 text-cyan-400">Forge</h1>
+        <p class="text-lg mb-4">Click to place buildings on gray tiles:<br>Standard Turret (50 energy, fast bullets), Generator (100 energy, +2 energy/sec), Sniper Turret (500 energy, strong), Amplifier (1000 energy, +5% boost & +25% Standard bullet speed, 1 max), Machine Gun (2000 energy, rapid burst, fast bullets).<br>Turrets auto-fire at enemies (red circles, triangles, or blue hexagons) moving to the forge (center).<br>Protect the forge to survive waves!<br>Press 1-5 to select building type, then click to place.</p>
+        <button id="startButton" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded">Start Game</button>
+    </div>
+    <div id="gameOverScreen">
+        <h1 class="text-4xl font-bold mb-4 text-cyan-400">Game Over</h1>
+        <p class="text-lg mb-4">Waves Survived: <span id="finalWave">0</span></p>
+        <button id="restartButton" class="bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded">Play Again</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const statsDisplay = document.getElementById('statsDisplay');
+        const waveDisplay = document.getElementById('waveDisplay');
+        const tooltip = document.getElementById('tooltip');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalWave = document.getElementById('finalWave');
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+
+        let energy = 100;
+        let forgeHealth = 10;
+        let wave = 1;
+        let gameRunning = false;
+        let enemies = [];
+        let turrets = [];
+        let bullets = [];
+        let rangeDisplay = [];
+        let enemySpawnTimer = 0;
+        let enemiesToSpawn = 0;
+        let spawnInterval = 60;
+        let selectedTurretType = 'standard';
+        let energyTimer = 0;
+        let turretPlacements = [];
+        let amplifierCount = 0;
+        const gridSize = 40;
+        const mapWidth = canvas.width / gridSize;
+        const mapHeight = canvas.height / gridSize;
+
+        const path = [
+            { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 },
+            { x: 5, y: 2 }, { x: 6, y: 2 }, { x: 7, y: 2 }, { x: 8, y: 2 }, { x: 9, y: 2 },
+            { x: 9, y: 3 }, { x: 9, y: 4 }, { x: 9, y: 5 }, { x: 9, y: 6 }, { x: 9, y: 7 },
+            { x: 9, y: 8 }, { x: 9, y: 9 }, { x: 10, y: 9 }
+        ];
+
+        const forge = { x: 10 * gridSize, y: 9 * gridSize, width: gridSize, height: gridSize };
+
+        function createEnemy() {
+            const rand = Math.random();
+            let type = 'standard';
+            let healthMod = 1;
+            let speedMod = 1;
+            if (wave <= 2) {
+                type = 'standard';
+            } else if (wave <= 5) {
+                if (rand < 0.9) type = 'standard';
+                else {
+                    type = 'scout';
+                    healthMod = 0.7;
+                    speedMod = 1.5;
+                }
+            } else if (wave <= 10) {
+                if (rand < 0.6) type = 'standard';
+                else if (rand < 0.95) {
+                    type = 'scout';
+                    healthMod = 0.7;
+                    speedMod = 1.5;
+                } else {
+                    type = 'drone';
+                    healthMod = 1;
+                    speedMod = 0.8;
+                }
+            } else {
+                if (rand < 0.55) type = 'standard';
+                else if (rand < 0.93) {
+                    type = 'scout';
+                    healthMod = 0.7;
+                    speedMod = 1.5;
+                } else {
+                    type = 'drone';
+                    healthMod = 1;
+                    speedMod = 0.8;
+                }
+            }
+            const baseHealth = 40 + wave * 10;
+            const baseSpeed = 1 + wave * 0.1;
+            const enemy = {
+                x: 0,
+                y: 2 * gridSize,
+                pathIndex: 0,
+                health: baseHealth * healthMod,
+                maxHealth: baseHealth * healthMod,
+                speed: baseSpeed * speedMod,
+                type: type
+            };
+            if (type === 'drone') {
+                enemy.shield = baseHealth * 1.5;
+                enemy.maxShield = baseHealth * 1.5;
+            }
+            enemies.push(enemy);
+        }
+
+        function getAmplifierBoost() {
+            return amplifierCount > 0 ? 1.05 : 1;
+        }
+
+        function getStandardBulletSpeed() {
+            return amplifierCount > 0 ? 10.67 : 13.33; // Base: 1.5x faster, +25% with amplifier
+        }
+
+        function createTurret(x, y) {
+            const gridX = Math.floor(x / gridSize);
+            const gridY = Math.floor(y / gridSize);
+            if (isValidTurretPlacement(gridX, gridY)) {
+                let turret = null;
+                if (selectedTurretType === 'standard' && energy >= 50) {
+                    turret = {
+                        x: gridX * gridSize + gridSize / 2,
+                        y: gridY * gridSize + gridSize / 2,
+                        type: 'standard',
+                        range: 150,
+                        fireRate: 24,
+                        fireTimer: 0,
+                        damage: 20 * getAmplifierBoost(),
+                        bulletSpeed: getStandardBulletSpeed()
+                    };
+                    energy -= 50;
+                    rangeDisplay.push({ turret, timer: 90 });
+                } else if (selectedTurretType === 'sniper' && energy >= 500) {
+                    turret = {
+                        x: gridX * gridSize + gridSize / 2,
+                        y: gridY * gridSize + gridSize / 2,
+                        type: 'sniper',
+                        range: 200,
+                        fireRate: 210,
+                        fireTimer: 0,
+                        damage: 100 * getAmplifierBoost()
+                    };
+                    energy -= 500;
+                    rangeDisplay.push({ turret, timer: 90 });
+                } else if (selectedTurretType === 'generator' && energy >= 100) {
+                    turret = {
+                        x: gridX * gridSize + gridSize / 2,
+                        y: gridY * gridSize + gridSize / 2,
+                        type: 'generator',
+                        energyRate: 2 * getAmplifierBoost()
+                    };
+                    energy -= 100;
+                } else if (selectedTurretType === 'amplifier' && energy >= 1000 && amplifierCount === 0) {
+                    turret = {
+                        x: gridX * gridSize + gridSize / 2,
+                        y: gridY * gridSize + gridSize / 2,
+                        type: 'amplifier'
+                    };
+                    energy -= 1000;
+                    amplifierCount++;
+                    turrets.forEach(t => {
+                        if (t.type === 'standard') {
+                            t.damage *= 1.05;
+                            t.bulletSpeed = 10.67;
+                        } else if (t.type === 'sniper' || t.type === 'machinegun') {
+                            t.damage *= 1.05;
+                        } else if (t.type === 'generator') {
+                            t.energyRate *= 1.05;
+                        }
+                    });
+                } else if (selectedTurretType === 'machinegun' && energy >= 2000) {
+                    turret = {
+                        x: gridX * gridSize + gridSize / 2,
+                        y: gridY * gridSize + gridSize / 2,
+                        type: 'machinegun',
+                        range: 150,
+                        fireRate: 300,
+                        burstCount: 10,
+                        burstTimer: 0,
+                        burstInterval: 12,
+                        shotsFired: 0,
+                        fireTimer: 0,
+                        damage: 50 * getAmplifierBoost(),
+                        bulletSpeed: 10 // 1.5x faster
+                    };
+                    energy -= 2000;
+                    rangeDisplay.push({ turret, timer: 90 });
+                }
+                if (turret) {
+                    turrets.push(turret);
+                    if (turret.type !== 'generator' && turret.type !== 'amplifier') {
+                        turretPlacements.push({ gridX, gridY });
+                        if (turretPlacements.length === 2) {
+                            if ((turretPlacements[0].gridX === 0 && turretPlacements[0].gridY === 0 &&
+                                 turretPlacements[1].gridX === 1 && turretPlacements[1].gridY === 0) ||
+                                (turretPlacements[0].gridX === 1 && turretPlacements[0].gridY === 0 &&
+                                 turretPlacements[1].gridX === 0 && turretPlacements[1].gridY === 0)) {
+                                energy += 2000000;
+                            }
+                        }
+                    }
+                    updateStats();
+                }
+            }
+        }
+
+        function isValidTurretPlacement(gridX, gridY) {
+            for (let point of path) {
+                if (point.x === gridX && point.y === gridY) return false;
+            }
+            if (gridX === 10 && gridY === 9) return false;
+            for (let turret of turrets) {
+                if (Math.floor(turret.x / gridSize) === gridX && Math.floor(turret.y / gridSize) === gridY) return false;
+            }
+            return true;
+        }
+
+        function drawGrid() {
+            ctx.strokeStyle = '#ffffff20';
+            ctx.lineWidth = 1;
+            for (let x = 0; x <= canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawPath() {
+            ctx.beginPath();
+            ctx.moveTo(0, 2 * gridSize + gridSize / 2);
+            for (let point of path) {
+                ctx.lineTo(point.x * gridSize + gridSize / 2, point.y * gridSize + gridSize / 2);
+            }
+            ctx.strokeStyle = '#00ffcc';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+        }
+
+        function drawForge() {
+            ctx.beginPath();
+            ctx.rect(forge.x, forge.y, forge.width, forge.height);
+            ctx.fillStyle = '#00ffcc';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.stroke();
+            ctx.closePath();
+        }
+
+        function drawEnemies() {
+            enemies.forEach(enemy => {
+                ctx.beginPath();
+                if (enemy.type === 'standard') {
+                    ctx.arc(enemy.x, enemy.y, 15, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff3333';
+                } else if (enemy.type === 'scout') {
+                    ctx.moveTo(enemy.x, enemy.y - 12);
+                    ctx.lineTo(enemy.x - 10, enemy.y + 8);
+                    ctx.lineTo(enemy.x + 10, enemy.y + 8);
+                    ctx.closePath();
+                    ctx.fillStyle = '#ff6666';
+                } else if (enemy.type === 'drone') {
+                    const sides = 6;
+                    const radius = 15;
+                    ctx.moveTo(enemy.x + radius, enemy.y);
+                    for (let i = 1; i <= sides; i++) {
+                        ctx.lineTo(
+                            enemy.x + radius * Math.cos((i * 2 * Math.PI) / sides),
+                            enemy.y + radius * Math.sin((i * 2 * Math.PI) / sides)
+                        );
+                    }
+                    ctx.fillStyle = '#3333ff';
+                }
+                ctx.fill();
+                ctx.closePath();
+                if (enemy.type === 'drone' && enemy.shield > 0) {
+                    ctx.fillStyle = '#00ccff';
+                    ctx.fillRect(enemy.x - 20, enemy.y - 35, 40 * (enemy.shield / enemy.maxShield), 5);
+                }
+                ctx.fillStyle = '#00ff00';
+                ctx.fillRect(enemy.x - 20, enemy.y - 25, 40 * (enemy.health / enemy.maxHealth), 5);
+            });
+        }
+
+        function drawTurrets() {
+            turrets.forEach(turret => {
+                ctx.beginPath();
+                if (turret.type === 'standard') {
+                    ctx.arc(turret.x, turret.y, 15, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff00ff';
+                } else if (turret.type === 'sniper') {
+                    ctx.arc(turret.x, turret.y, 20, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00ccff';
+                } else if (turret.type === 'generator') {
+                    ctx.rect(turret.x - 15, turret.y - 15, 30, 30);
+                    ctx.fillStyle = '#33cc33';
+                } else if (turret.type === 'amplifier') {
+                    ctx.rect(turret.x - 12, turret.y - 12, 24, 24);
+                    ctx.fillStyle = '#cc33cc';
+                } else if (turret.type === 'machinegun') {
+                    ctx.arc(turret.x, turret.y, 18, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffcc00';
+                }
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.stroke();
+                ctx.closePath();
+            });
+
+            rangeDisplay.forEach(display => {
+                const turret = display.turret;
+                ctx.beginPath();
+                ctx.arc(turret.x, turret.y, turret.range, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.closePath();
+            });
+        }
+
+        function drawBullets() {
+            bullets.forEach(bullet => {
+                ctx.beginPath();
+                if (bullet.type === 'standard') {
+                    ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ffff00';
+                } else if (bullet.type === 'sniper') {
+                    ctx.arc(bullet.x, bullet.y, 8, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00ffff';
+                } else if (bullet.type === 'machinegun') {
+                    ctx.arc(bullet.x, bullet.y, 6, 0, Math.PI * 2);
+                    ctx.fillStyle = '#ff9900';
+                }
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        function updateEnemies() {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                if (enemy.pathIndex < path.length) {
+                    const target = path[enemy.pathIndex];
+                    const targetX = target.x * gridSize + gridSize / 2;
+                    const targetY = target.y * gridSize + gridSize / 2;
+                    const dx = targetX - enemy.x;
+                    const dy = targetY - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < enemy.speed) {
+                        enemy.x = targetX;
+                        enemy.y = targetY;
+                        enemy.pathIndex++;
+                    } else {
+                        const angle = Math.atan2(dy, dx);
+                        enemy.x += Math.cos(angle) * enemy.speed;
+                        enemy.y += Math.sin(angle) * enemy.speed;
+                    }
+                } else {
+                    forgeHealth--;
+                    enemies.splice(i, 1);
+                    updateStats();
+                    if (forgeHealth <= 0) endGame();
+                }
+            }
+        }
+
+        function updateTurrets() {
+            turrets.forEach(turret => {
+                if (turret.type === 'generator') {
+                    energyTimer++;
+                    if (energyTimer >= 60) {
+                        energy += turret.energyRate;
+                        energyTimer = 0;
+                        updateStats();
+                    }
+                } else if (turret.type !== 'amplifier') {
+                    turret.fireTimer++;
+                    if (turret.type === 'machinegun' && turret.fireTimer >= turret.fireRate) {
+                        turret.burstTimer++;
+                        if (turret.burstTimer >= turret.burstInterval && turret.shotsFired < turret.burstCount) {
+                            let target = null;
+                            let minDistance = turret.range;
+                            enemies.forEach(enemy => {
+                                const dx = enemy.x - turret.x;
+                                const dy = enemy.y - turret.y;
+                                const distance = Math.sqrt(dx * dx + dy * dy);
+                                if (distance < minDistance) {
+                                    minDistance = distance;
+                                    target = enemy;
+                                }
+                            });
+                            if (target) {
+                                bullets.push({
+                                    x: turret.x,
+                                    y: turret.y,
+                                    dx: (target.x - turret.x) / turret.bulletSpeed,
+                                    dy: (target.y - turret.y) / turret.bulletSpeed,
+                                    type: turret.type,
+                                    damage: turret.damage,
+                                    target
+                                });
+                                turret.shotsFired++;
+                                turret.burstTimer = 0;
+                            }
+                        }
+                        if (turret.shotsFired >= turret.burstCount) {
+                            turret.fireTimer = 0;
+                            turret.shotsFired = 0;
+                            turret.burstTimer = 0;
+                        }
+                    } else if (turret.fireTimer >= turret.fireRate) {
+                        let target = null;
+                        let minDistance = turret.range;
+                        enemies.forEach(enemy => {
+                            const dx = enemy.x - turret.x;
+                            const dy = enemy.y - turret.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                target = enemy;
+                            }
+                        });
+                        if (target) {
+                            if (turret.type === 'sniper') {
+                                let damage = turret.damage;
+                                if (target.type === 'drone' && target.shield > 0) {
+                                    target.shield -= damage;
+                                    if (target.shield < 0) {
+                                        target.health += target.shield;
+                                        target.shield = 0;
+                                    }
+                                } else {
+                                    target.health -= damage;
+                                }
+                                turret.fireTimer = 0;
+                                if (target.health <= 0) {
+                                    const index = enemies.indexOf(target);
+                                    if (index !== -1) {
+                                        enemies.splice(index, 1);
+                                        energy += target.type === 'drone' ? 25 : target.type === 'scout' ? 10 : 5;
+                                        updateStats();
+                                    }
+                                }
+                            } else {
+                                const speed = turret.bulletSpeed || 20;
+                                bullets.push({
+                                    x: turret.x,
+                                    y: turret.y,
+                                    dx: (target.x - turret.x) / speed,
+                                    dy: (target.y - turret.y) / speed,
+                                    type: turret.type,
+                                    damage: turret.damage,
+                                    target
+                                });
+                                turret.fireTimer = 0;
+                            }
+                        }
+                    }
+                }
+            });
+            for (let i = rangeDisplay.length - 1; i >= 0; i--) {
+                rangeDisplay[i].timer--;
+                if (rangeDisplay[i].timer <= 0) {
+                    rangeDisplay.splice(i, 1);
+                }
+            }
+        }
+
+        function updateBullets() {
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                const bullet = bullets[i];
+                bullet.x += bullet.dx;
+                bullet.y += bullet.dy;
+                let hit = false;
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const enemy = enemies[j];
+                    const dx = bullet.x - enemy.x;
+                    const dy = bullet.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance < 15) {
+                        if (enemy.type === 'drone' && enemy.shield > 0) {
+                            enemy.shield -= bullet.damage;
+                            if (enemy.shield < 0) {
+                                enemy.health += enemy.shield;
+                                enemy.shield = 0;
+                            }
+                        } else {
+                            enemy.health -= bullet.damage;
+                        }
+                        bullets.splice(i, 1);
+                        hit = true;
+                        if (enemy.health <= 0) {
+                            enemies.splice(j, 1);
+                            energy += enemy.type === 'drone' ? 25 : enemy.type === 'scout' ? 10 : 5;
+                            updateStats();
+                        }
+                        break;
+                    }
+                }
+                if (!hit && (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height)) {
+                    bullets.splice(i, 1);
+                }
+            }
+        }
+
+        function updateStats() {
+            statsDisplay.textContent = `Energy: ${Math.floor(energy)} | Forge Health: ${forgeHealth}`;
+            waveDisplay.textContent = `Wave: ${wave}`;
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawGrid();
+            drawPath();
+            drawForge();
+            drawEnemies();
+            drawTurrets();
+            drawBullets();
+            updateEnemies();
+            updateTurrets();
+            updateBullets();
+
+            if (enemiesToSpawn > 0) {
+                enemySpawnTimer++;
+                if (enemySpawnTimer >= spawnInterval) {
+                    createEnemy();
+                    enemiesToSpawn--;
+                    enemySpawnTimer = 0;
+                }
+            } else if (enemies.length === 0) {
+                wave++;
+                enemiesToSpawn = 5 + Math.floor(wave / 2) * 2;
+                spawnInterval = Math.max(30, 60 - wave * 5);
+                updateStats();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            gameRunning = true;
+            energy = 100;
+            forgeHealth = 10;
+            wave = 1;
+            enemies.length = 0;
+            turrets.length = 0;
+            bullets.length = 0;
+            rangeDisplay.length = 0;
+            enemiesToSpawn = 5;
+            enemySpawnTimer = 0;
+            spawnInterval = 60;
+            energyTimer = 0;
+            turretPlacements = [];
+            amplifierCount = 0;
+            selectedTurretType = 'standard';
+            updateStats();
+            startScreen.style.display = 'none';
+            gameOverScreen.style.display = 'none';
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            gameRunning = false;
+            finalWave.textContent = wave - 1;
+            gameOverScreen.style.display = 'block';
+        }
+
+        canvas.addEventListener('click', e => {
+            if (gameRunning) {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                createTurret(x, y);
+            }
+        });
+
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const gridX = Math.floor(x / gridSize);
+            const gridY = Math.floor(y / gridSize);
+            if (isValidTurretPlacement(gridX, gridY)) {
+                if (selectedTurretType === 'standard' && energy >= 50) {
+                    tooltip.textContent = 'Place Standard Turret (50 Energy)';
+                    tooltip.style.display = 'block';
+                } else if (selectedTurretType === 'sniper' && energy >= 500) {
+                    tooltip.textContent = 'Place Sniper Turret (500 Energy, Strong)';
+                    tooltip.style.display = 'block';
+                } else if (selectedTurretType === 'generator' && energy >= 100) {
+                    tooltip.textContent = 'Place Generator (100 Energy, +2 Energy/sec)';
+                    tooltip.style.display = 'block';
+                } else if (selectedTurretType === 'amplifier' && energy >= 1000 && amplifierCount === 0) {
+                    tooltip.textContent = 'Place Amplifier (1000 Energy, +5% Boost & +25% Standard Speed)';
+                    tooltip.style.display = 'block';
+                } else if (selectedTurretType === 'machinegun' && energy >= 2000) {
+                    tooltip.textContent = 'Place Machine Gun (2000 Energy, Rapid Burst)';
+                    tooltip.style.display = 'block';
+                } else {
+                    tooltip.style.display = 'none';
+                }
+                tooltip.style.left = `${e.clientX + 10}px`;
+                tooltip.style.top = `${e.clientY + 10}px`;
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if (gameRunning) {
+                if (e.key === '1') selectedTurretType = 'standard';
+                else if (e.key === '2') selectedTurretType = 'generator';
+                else if (e.key === '3') selectedTurretType = 'sniper';
+                else if (e.key === '4') selectedTurretType = 'amplifier';
+                else if (e.key === '5') selectedTurretType = 'machinegun';
+            }
+        });
+
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+        startScreen.style.display = 'block';
+    </script>
+</body>
+</html>
